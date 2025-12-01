@@ -1,11 +1,11 @@
-from glob import glob
 import os
 import json
 from io import BytesIO
 from datetime import datetime
 
 import streamlit as st
-from PIL import Image, ImageDraw
+from PIL import Image
+from streamlit_drawable_canvas import st_canvas
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(__file__)
@@ -46,16 +46,15 @@ def save_image_and_label(img: Image.Image, tap_x, tap_y, screen_label: str | Non
     with open(label_path, "w", encoding="utf-8") as f:
         json.dump(label, f, indent=2)
 
-    return img_path, label_path, label   # 👈 add label here
-
+    return img_path, label_path, label
 
 
 def main():
-    st.title("Phone Setup AI – Tap Point Labeler (Slider Version)")
+    st.title("Phone Setup AI – Click-to-Tap Labeler")
 
     st.write(
-        "Upload phone screen screenshots, choose where the robot should tap "
-        "using X/Y sliders, and we'll store training data for a tap prediction model."
+        "Upload phone screenshots, **click once** where the robot should tap, "
+        "and we'll save images + tap coordinates for training."
     )
 
     uploaded_files = st.file_uploader(
@@ -64,19 +63,17 @@ def main():
         accept_multiple_files=True,
     )
 
-    # Session state for images and index
     if "images" not in st.session_state:
         st.session_state.images = []
     if "current_index" not in st.session_state:
         st.session_state.current_index = 0
 
-    # When new files are uploaded, reset images list once
-    if uploaded_files:
-        if not st.session_state.images:
-            for uf in uploaded_files:
-                image = Image.open(BytesIO(uf.read())).convert("RGB")
-                st.session_state.images.append(image)
-            st.session_state.current_index = 0
+    # Load uploaded files into memory once
+    if uploaded_files and not st.session_state.images:
+        for uf in uploaded_files:
+            image = Image.open(BytesIO(uf.read())).convert("RGB")
+            st.session_state.images.append(image)
+        st.session_state.current_index = 0
 
     if not st.session_state.images:
         st.info("Upload some images to get started.")
@@ -89,55 +86,37 @@ def main():
 
     st.write(f"Image {idx + 1} of {total}  |  size: {w} x {h}")
 
-    # Optional screen label (e.g. 'google_terms', 'wifi_skip')
     screen_label = st.text_input(
-        "Screen label (optional, e.g. 'google_terms')",
+        "Screen label (optional, e.g. 'StartIOS14', 'GoogleTerms')",
         key=f"screen_label_{idx}",
     )
 
-    st.markdown("### Choose tap coordinates (pixels)")
+    st.markdown("### Click on the image once to choose tap point")
 
-    # Defaults: center of the image
-    default_x = w // 2
-    default_y = h // 2
-
-    # Use session_state to remember choices per image if you navigate
-    if f"x_{idx}" not in st.session_state:
-        st.session_state[f"x_{idx}"] = default_x
-    if f"y_{idx}" not in st.session_state:
-        st.session_state[f"y_{idx}"] = default_y
-
-    tap_x = st.slider(
-        "Tap X (horizontal, 0 = left)",
-        min_value=0,
-        max_value=w - 1,
-        value=st.session_state[f"x_{idx}"],
-        key=f"x_slider_{idx}",
-    )
-    tap_y = st.slider(
-        "Tap Y (vertical, 0 = top)",
-        min_value=0,
-        max_value=h - 1,
-        value=st.session_state[f"y_{idx}"],
-        key=f"y_slider_{idx}",
+    canvas_result = st_canvas(
+        fill_color="rgba(255, 0, 0, 1.0)",
+        stroke_width=5,
+        stroke_color="#ff0000",
+        background_image=img,
+        update_streamlit=True,
+        height=h,
+        width=w,
+        drawing_mode="point",      # we just want points
+        key=f"canvas_{idx}",
     )
 
-    # Update stored values
-    st.session_state[f"x_{idx}"] = tap_x
-    st.session_state[f"y_{idx}"] = tap_y
+    tap_x = tap_y = None
+    if canvas_result.json_data is not None:
+        objects = canvas_result.json_data.get("objects", [])
+        if objects:
+            last_obj = objects[-1]
+            tap_x = last_obj.get("left", None)
+            tap_y = last_obj.get("top", None)
 
-    st.write(f"Selected tap coords: x = **{tap_x}**, y = **{tap_y}**")
-
-    # Draw preview with a red dot
-    preview_img = img.copy()
-    draw = ImageDraw.Draw(preview_img)
-    r = max(4, int(min(w, h) * 0.01))  # radius of dot
-    left_up = (tap_x - r, tap_y - r)
-    right_down = (tap_x + r, tap_y + r)
-    draw.ellipse([left_up, right_down], fill="red")
-
-    st.markdown("### Preview (with tap point in red)")
-    st.image(preview_img, use_column_width=True)
+    if tap_x is not None and tap_y is not None:
+        st.write(f"Selected tap coords: x = **{tap_x:.1f}**, y = **{tap_y:.1f}**")
+    else:
+        st.warning("Click once on the image to set the tap point.")
 
     col1, col2, col3 = st.columns(3)
 
@@ -149,22 +128,17 @@ def main():
 
     with col2:
         if st.button("Save label for this image"):
-            img_path, label_path, label = save_image_and_label(
-                img,
-                tap_x=tap_x,
-                tap_y=tap_y,
-                screen_label=screen_label.strip() or None,
-            )
-            st.success(f"Saved label: {os.path.basename(label_path)}")
-
-            # 👇 show the actual JSON we just wrote
-            st.markdown("**Last saved label JSON:**")
-            st.json(label)
-
-            # 👇 show how many label files exist
-            all_labels = glob(os.path.join(LABELS_DIR, "*.json"))
-            st.write(f"Total label files in `{LABELS_DIR}`: **{len(all_labels)}**")
-
+            if tap_x is None or tap_y is None:
+                st.error("You need to click on the image first.")
+            else:
+                img_path, label_path, label = save_image_and_label(
+                    img,
+                    tap_x=tap_x,
+                    tap_y=tap_y,
+                    screen_label=screen_label.strip() or None,
+                )
+                st.success(f"Saved label: {os.path.basename(label_path)}")
+                st.json(label)
 
     with col3:
         if st.button("Next ➡", disabled=(idx == total - 1)):
@@ -173,11 +147,10 @@ def main():
                 st.experimental_rerun()
 
     st.markdown("---")
-    st.write(
-        "You can label all images in one go. When you're done, you'll have "
-        "PNG images in `data/images/` and JSON labels in `data/labels/` "
-        "ready for the training script."
-    )
+    st.write("Images go to:")
+    st.code(IMAGES_DIR)
+    st.write("Labels (JSON) go to:")
+    st.code(LABELS_DIR)
 
 
 if __name__ == "__main__":
