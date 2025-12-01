@@ -103,4 +103,71 @@ def main():
     if f"x_{idx}" not in st.session_state:
         st.session_state[f"x_{idx}"] = default_x
     if f"y_{idx}" not in st.session_state:
-        st.session
+        st.session_state[f"y_{idx}"] = default_y
+
+    tap_x = st.slider(
+        "Tap X (horizontal, 0 = left)",
+        min_value=0,
+        max_value=w - 1,
+        value=st.session_state[f"x_{idx}"],
+        key=f"x_slider_{idx}",
+    )
+    tap_y = st.slider(
+        "Tap Y (vertical, 0 = top)",
+        min_value=0,
+        max_value=h - 1,
+        value=st.session_state[f"y_{idx}"],
+        key=f"y_slider_{idx}",
+    )
+
+    # Update stored values
+    st.session_state[f"x_{idx}"] = tap_x
+    st.session_state[f"y_{idx}"] = tap_y
+
+    st.write(f"Selected tap coords: x = **{tap_x}**, y = **{tap_y}**")
+
+    # Draw preview with a red dot
+    preview_img = img.copy()
+    draw = ImageDraw.Draw(preview_img)
+    r = max(4, int(min(w, h) * 0.01))  # radius of dot
+    left_up = (tap_x - r, tap_y - r)
+    right_down = (tap_x + r, tap_y + r)
+    draw.ellipse([left_up, right_down], fill="red")
+
+    st.markdown("### Preview (with tap point in red)")
+    st.image(preview_img, use_column_width=True)
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if st.button("⬅ Previous", disabled=(idx == 0)):
+            if idx > 0:
+                st.session_state.current_index -= 1
+                st.experimental_rerun()
+
+    with col2:
+        if st.button("Save label for this image"):
+            img_path, label_path = save_image_and_label(
+                img,
+                tap_x=tap_x,
+                tap_y=tap_y,
+                screen_label=screen_label.strip() or None,
+            )
+            st.success(f"Saved label: {os.path.basename(label_path)}")
+
+    with col3:
+        if st.button("Next ➡", disabled=(idx == total - 1)):
+            if idx < total - 1:
+                st.session_state.current_index += 1
+                st.experimental_rerun()
+
+    st.markdown("---")
+    st.write(
+        "You can label all images in one go. When you're done, you'll have "
+        "PNG images in `data/images/` and JSON labels in `data/labels/` "
+        "ready for the training script."
+    )
+
+
+if __name__ == "__main__":
+    main()
