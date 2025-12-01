@@ -4,8 +4,7 @@ from io import BytesIO
 from datetime import datetime
 
 import streamlit as st
-from PIL import Image
-from streamlit_drawable_canvas import st_canvas
+from PIL import Image, ImageDraw
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(__file__)
@@ -50,11 +49,11 @@ def save_image_and_label(img: Image.Image, tap_x, tap_y, screen_label: str | Non
 
 
 def main():
-    st.title("Phone Setup AI – Click-to-Tap Labeler")
+    st.title("Phone Setup AI – Tap Point Labeler (Slider Version)")
 
     st.write(
-        "Upload phone screen screenshots, click where the robot should tap, "
-        "and we’ll store training data for a tap prediction model."
+        "Upload phone screen screenshots, choose where the robot should tap "
+        "using X/Y sliders, and we'll store training data for a tap prediction model."
     )
 
     uploaded_files = st.file_uploader(
@@ -63,14 +62,14 @@ def main():
         accept_multiple_files=True,
     )
 
-    if "current_index" not in st.session_state:
-        st.session_state.current_index = 0
+    # Session state for images and index
     if "images" not in st.session_state:
         st.session_state.images = []
+    if "current_index" not in st.session_state:
+        st.session_state.current_index = 0
 
-    # When new files are uploaded, reset state
+    # When new files are uploaded, reset images list once
     if uploaded_files:
-        # Only convert to images once
         if not st.session_state.images:
             for uf in uploaded_files:
                 image = Image.open(BytesIO(uf.read())).convert("RGB")
@@ -83,70 +82,25 @@ def main():
 
     idx = st.session_state.current_index
     total = len(st.session_state.images)
-    st.write(f"Image {idx + 1} of {total}")
-
     img = st.session_state.images[idx]
-
-    # Optional: enter screen label (e.g. 'google_terms', 'wifi_skip')
-    screen_label = st.text_input("Screen label (optional, e.g. 'google_terms')", key=f"label_{idx}")
-
-    st.write("Click once where you want the robot to tap (draw a point).")
-
     w, h = img.size
 
-    # Use drawable canvas with a point tool
-    canvas_result = st_canvas(
-        fill_color="rgba(255, 0, 0, 1.0)",
-        stroke_width=5,
-        stroke_color="#ff0000",
-        background_image=img,
-        update_streamlit=True,
-        height=h,
-        width=w,
-        drawing_mode="point",
-        key=f"canvas_{idx}",
+    st.write(f"Image {idx + 1} of {total}  |  size: {w} x {h}")
+
+    # Optional screen label (e.g. 'google_terms', 'wifi_skip')
+    screen_label = st.text_input(
+        "Screen label (optional, e.g. 'google_terms')",
+        key=f"screen_label_{idx}",
     )
 
-    tap_coords = None
-    if canvas_result.json_data is not None:
-        objects = canvas_result.json_data.get("objects", [])
-        if objects:
-            # Use the last drawn point
-            last_obj = objects[-1]
-            # For a point, 'left' and 'top' are its coordinates
-            tap_x = last_obj.get("left", None)
-            tap_y = last_obj.get("top", None)
-            if tap_x is not None and tap_y is not None:
-                tap_coords = (tap_x, tap_y)
-                st.write(f"Selected tap coords (pixels): x={tap_x:.1f}, y={tap_y:.1f}")
+    st.markdown("### Choose tap coordinates (pixels)")
 
-    col1, col2 = st.columns(2)
+    # Defaults: center of the image
+    default_x = w // 2
+    default_y = h // 2
 
-    with col1:
-        if st.button("Save label & Next"):
-            if tap_coords is None:
-                st.warning("Click on the image to select a tap point before saving.")
-            else:
-                tap_x, tap_y = tap_coords
-                img_path, label_path = save_image_and_label(
-                    img,
-                    tap_x=tap_x,
-                    tap_y=tap_y,
-                    screen_label=screen_label.strip() or None,
-                )
-                st.success(f"Saved label: {os.path.basename(label_path)}")
-
-                if idx < total - 1:
-                    st.session_state.current_index += 1
-                else:
-                    st.success("All uploaded images have been labeled.")
-    with col2:
-        if st.button("Skip this image"):
-            if idx < total - 1:
-                st.session_state.current_index += 1
-            else:
-                st.success("No more images.")
-
-
-if __name__ == "__main__":
-    main()
+    # Use session_state to remember choices per image if you navigate
+    if f"x_{idx}" not in st.session_state:
+        st.session_state[f"x_{idx}"] = default_x
+    if f"y_{idx}" not in st.session_state:
+        st.session
