@@ -1,3 +1,4 @@
+from glob import glob
 import os
 import json
 from io import BytesIO
@@ -45,7 +46,8 @@ def save_image_and_label(img: Image.Image, tap_x, tap_y, screen_label: str | Non
     with open(label_path, "w", encoding="utf-8") as f:
         json.dump(label, f, indent=2)
 
-    return img_path, label_path
+    return img_path, label_path, label   # 👈 add label here
+
 
 
 def main():
@@ -147,13 +149,22 @@ def main():
 
     with col2:
         if st.button("Save label for this image"):
-            img_path, label_path = save_image_and_label(
+            img_path, label_path, label = save_image_and_label(
                 img,
                 tap_x=tap_x,
                 tap_y=tap_y,
                 screen_label=screen_label.strip() or None,
             )
             st.success(f"Saved label: {os.path.basename(label_path)}")
+
+            # 👇 show the actual JSON we just wrote
+            st.markdown("**Last saved label JSON:**")
+            st.json(label)
+
+            # 👇 show how many label files exist
+            all_labels = glob(os.path.join(LABELS_DIR, "*.json"))
+            st.write(f"Total label files in `{LABELS_DIR}`: **{len(all_labels)}**")
+
 
     with col3:
         if st.button("Next ➡", disabled=(idx == total - 1)):
